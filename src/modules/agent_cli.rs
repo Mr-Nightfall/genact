@@ -598,7 +598,7 @@ impl<'a> Renderer<'a> {
 
         while elapsed < total {
             erase_line().await;
-            let seconds = ((elapsed + 999) / 1000).max(1);
+            let seconds = elapsed.div_ceil(1000).max(1);
             print(Self::dim(format!(
                 "{} Thinking… {seconds}s",
                 FRAMES[frame % FRAMES.len()]
@@ -644,7 +644,7 @@ impl<'a> Renderer<'a> {
 
         while elapsed < total {
             erase_line().await;
-            let seconds = ((elapsed + 999) / 1000).max(1);
+            let seconds = elapsed.div_ceil(1000).max(1);
             print(Self::dim(format!(
                 "{} Thinking… {seconds}s",
                 FRAMES[frame % FRAMES.len()]
@@ -736,7 +736,7 @@ impl<'a> Renderer<'a> {
             let branch = if idx + 1 == count { "└─" } else { "├─" };
             print(Self::dim(format!("  {branch} {file}"))).await;
             newline().await;
-            state.saw(*file);
+            state.saw(file);
             if !self.wait_ms(rng.random_range(220..650)).await {
                 return false;
             }
@@ -765,7 +765,7 @@ impl<'a> Renderer<'a> {
         for file in scenario.files.iter().take(match_files) {
             print(Self::dim(format!("  └ {file}"))).await;
             newline().await;
-            state.saw(*file);
+            state.saw(file);
             if !self.wait_ms(rng.random_range(220..650)).await {
                 return false;
             }
@@ -1492,10 +1492,10 @@ impl Module for AgentCli {
             return;
         }
 
-        if complexity != Complexity::Small || rng.random_bool(0.55) {
-            if !renderer.explore(scenario, &mut state).await {
-                return;
-            }
+        if (complexity != Complexity::Small || rng.random_bool(0.55))
+            && !renderer.explore(scenario, &mut state).await
+        {
+            return;
         }
 
         if !renderer.search(scenario, &mut state).await {
@@ -1504,7 +1504,7 @@ impl Module for AgentCli {
 
         let read_count = complexity.read_count().min(scenario.files.len());
         for file in scenario.files.iter().take(read_count) {
-            if !renderer.read(scenario, *file, &mut state).await {
+            if !renderer.read(scenario, file, &mut state).await {
                 return;
             }
         }

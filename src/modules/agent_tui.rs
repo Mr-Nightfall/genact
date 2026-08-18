@@ -96,9 +96,9 @@ impl Complexity {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum EntryStrategy {
-    ReproduceFirst,
-    ExploreFirst,
-    ReadFirst,
+    Reproduce,
+    Explore,
+    Read,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -154,19 +154,19 @@ impl BehaviorPlan {
         let entry_roll: u32 = rng.random_range(0..100);
         let entry = match complexity {
             Complexity::Small => match entry_roll {
-                0..=24 => EntryStrategy::ReproduceFirst,
-                25..=74 => EntryStrategy::ExploreFirst,
-                _ => EntryStrategy::ReadFirst,
+                0..=24 => EntryStrategy::Reproduce,
+                25..=74 => EntryStrategy::Explore,
+                _ => EntryStrategy::Read,
             },
             Complexity::Normal => match entry_roll {
-                0..=31 => EntryStrategy::ReproduceFirst,
-                32..=74 => EntryStrategy::ExploreFirst,
-                _ => EntryStrategy::ReadFirst,
+                0..=31 => EntryStrategy::Reproduce,
+                32..=74 => EntryStrategy::Explore,
+                _ => EntryStrategy::Read,
             },
             Complexity::Complex | Complexity::Deep => match entry_roll {
-                0..=36 => EntryStrategy::ReproduceFirst,
-                37..=71 => EntryStrategy::ExploreFirst,
-                _ => EntryStrategy::ReadFirst,
+                0..=36 => EntryStrategy::Reproduce,
+                37..=71 => EntryStrategy::Explore,
+                _ => EntryStrategy::Read,
             },
         };
 
@@ -1508,7 +1508,7 @@ impl<'a> Renderer<'a> {
         self.clear_footer().await;
 
         let mut rng = rng();
-        let removed_additions = rng.random_range(1..=state.additions.min(6).max(1));
+        let removed_additions = rng.random_range(1..=state.additions.clamp(1, 6));
         let removed_deletions = if state.deletions > 1 {
             rng.random_range(0..=state.deletions.min(3))
         } else {
@@ -1714,7 +1714,7 @@ fn initial_reasoning(
     entry: EntryStrategy,
 ) -> Vec<String> {
     let mut result = match entry {
-        EntryStrategy::ReproduceFirst => vec![
+        EntryStrategy::Reproduce => vec![
             format!(
                 "I'll reproduce `{}` first so I have a concrete failing path before reading through the implementation.",
                 scenario.failing_test
@@ -1724,7 +1724,7 @@ fn initial_reasoning(
                 scenario.symbol
             ),
         ],
-        EntryStrategy::ExploreFirst => vec![
+        EntryStrategy::Explore => vec![
             format!(
                 "I'll trace `{}` first and compare the implementation with `{}` before changing anything.",
                 scenario.symbol,
@@ -1732,7 +1732,7 @@ fn initial_reasoning(
             ),
             "I want to keep the first pass narrow: identify the state transition, confirm the contract in the test, then edit only the path responsible for the mismatch.".to_string(),
         ],
-        EntryStrategy::ReadFirst => vec![
+        EntryStrategy::Read => vec![
             format!(
                 "I'll start in `{}` because it is the most likely owner of `{}`, then search outward from the concrete implementation rather than scanning the whole repository first.",
                 scenario.files[0], scenario.symbol
@@ -2027,7 +2027,7 @@ impl Module for AgentTui {
         // V1.2 deliberately varies how the agent enters the problem instead of
         // always following Explore -> Search -> Read.
         match plan.entry {
-            EntryStrategy::ReproduceFirst => {
+            EntryStrategy::Reproduce => {
                 let reproduction_passes = plan.analysis_only;
                 if !renderer
                     .run_tests(
@@ -2048,23 +2048,23 @@ impl Module for AgentTui {
                     return;
                 }
             }
-            EntryStrategy::ExploreFirst => {
-                if complexity != Complexity::Small || rng.random_bool(0.58) {
-                    if !renderer.explore(scenario).await {
-                        return;
-                    }
+            EntryStrategy::Explore => {
+                if (complexity != Complexity::Small || rng.random_bool(0.58))
+                    && !renderer.explore(scenario).await
+                {
+                    return;
                 }
                 if !renderer.search(scenario).await {
                     return;
                 }
                 let read_count = complexity.initial_reads().min(scenario.files.len());
                 for file in scenario.files.iter().take(read_count) {
-                    if !renderer.read(scenario, *file).await {
+                    if !renderer.read(scenario, file).await {
                         return;
                     }
                 }
             }
-            EntryStrategy::ReadFirst => {
+            EntryStrategy::Read => {
                 if !renderer.read(scenario, scenario.files[0]).await {
                     return;
                 }
@@ -2104,7 +2104,7 @@ impl Module for AgentTui {
         }
 
         for file in scenario.files.iter().rev().take(plan.extra_reads) {
-            if !renderer.read(scenario, *file).await {
+            if !renderer.read(scenario, file).await {
                 return;
             }
         }
@@ -2366,13 +2366,12 @@ impl Module for AgentTui {
             }
         }
 
-        if state.used_lsp || rng.random_bool(0.36) {
-            if !renderer
+        if (state.used_lsp || rng.random_bool(0.36))
+            && !renderer
                 .diagnostics(scenario.files[0], true, &mut state)
                 .await
-            {
-                return;
-            }
+        {
+            return;
         }
 
         if plan.review_diff {
