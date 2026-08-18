@@ -648,16 +648,17 @@ impl<'a> Renderer<'a> {
 
     async fn status_wait(&mut self, status: &str, kind: DelayKind) -> bool {
         const FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+        const SPINNER_FRAME_MS: u64 = 80;
+
         let total = sample_delay(kind);
         let mut elapsed = 0u64;
         let mut frame = 0usize;
-        let mut rng = rng();
 
         self.show_footer(status).await;
         while elapsed < total {
             let label = format!("{} {status}", FRAMES[frame % FRAMES.len()]);
             self.update_footer(&label).await;
-            let step = rng.random_range(220..420).min(total - elapsed);
+            let step = SPINNER_FRAME_MS.min(total - elapsed);
             csleep(step).await;
             elapsed += step;
             frame += 1;
